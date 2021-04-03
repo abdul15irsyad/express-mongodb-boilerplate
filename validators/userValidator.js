@@ -23,7 +23,7 @@ const validators = {
 }
 
 module.exports = {
-    create: [validators.name, validators.age, validators.username, validators.email],
+    create: [validators.name, validators.username, validators.newPassword],
     edit: [validators.name, validators.username],
     editPassword: [validators.oldPassword, validators.newPassword, validators.confirmPassword]
 }
