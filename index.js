@@ -1,11 +1,12 @@
 const express = require('express')
 const app = express()
 const cors = require('cors')
+const { PORT } = require('./config/app')
 require('dotenv').config()
 // mongo db connect
 require('./config/mongodb')
 
-const port = process.env.PORT || 3000
+const port = PORT
 const routes = require('./routes')
 
 app.set('view engine', 'pug')
