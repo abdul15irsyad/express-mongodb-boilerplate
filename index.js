@@ -6,7 +6,6 @@ require('dotenv').config()
 // mongo db connect
 require('./config/mongodb')
 
-const port = PORT
 const routes = require('./routes')
 
 app.set('view engine', 'pug')
@@ -19,4 +18,4 @@ app.use(express.urlencoded({ extended: true }))
 
 app.use('/', routes)
 
-app.listen(port, () => console.log(`server running on port ${port}`))
+app.listen(PORT, () => console.log(`server running on port ${PORT}`))
