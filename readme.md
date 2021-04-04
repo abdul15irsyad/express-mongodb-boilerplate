@@ -1,8 +1,8 @@
 # Express MongoDB Boilerplate
-My boilerplate rest api with express and mongodb
+Boilerplate REST API with express and mongodb (mongoose)
 
 ## Installation
-1. clone the repo (in terminal or bash) and then install with [npm](https://www.npmjs.com) to install all dependencies
+1. clone the repo (in terminal or bash) and then install with npm to install all dependencies
 
 ```bash
 git clone https://github.com/abdul15irsyad/express-mongodb-boilerplate.git repo
