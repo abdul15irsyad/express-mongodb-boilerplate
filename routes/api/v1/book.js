@@ -1,9 +1,10 @@
 const express = require('express')
 const router = express.Router()
 const { validationResult } = require('express-validator')
-const { create, edit } = require('../../../validators/bookValidator')
+const { createBook, editBook, getBook, deleteBook } = require('../../../validators/bookValidator')
+const { toSlug } = require('../../../utils/string')
 
-const Book = require('../../../models/Book')
+const { Book, User } = require('../../../models')
 
 /*
 * @api {get} /api/v1/hobby
@@ -26,6 +27,10 @@ router.get('/', async (req, res) => {
             pagination: page == 'all' ? false : true,
             page: page ? parseInt(page, 10) : 1,
             limit: limit ? parseInt(limit, 10) : 10,
+            populate: {
+                path: 'author',
+                select: '-books'
+            },
             sort: {
                 title: parseInt(sort)
             }
@@ -36,7 +41,7 @@ router.get('/', async (req, res) => {
         })
     } catch (err) {
         return res.status(500).json({
-            message: 'interal server error!',
+            message: 'interal server error',
             error: err.message
         })
     }
@@ -50,15 +55,24 @@ router.get('/', async (req, res) => {
 *
 * @apiParam {id} id : book unique id
 */
-router.get('/:id', async (req, res) => {
+router.get('/:id', getBook, async (req, res) => {
     try {
+        // if validation failed
+        let errors = validationResult(req)
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                status: false,
+                message: 'inputs not valid',
+                errors: errors.array({ onlyFirstError: true })
+            })
+        }
         let { id } = req.params
-        let book = await Book.findById(id)
+        let book = await Book.findById(id).populate({ path: 'author', select: '-books' })
         // if book not found
         if (!book) {
             return res.status(200).json({
                 status: false,
-                message: 'book not found!',
+                message: 'book not found',
             })
         }
         return res.status(200).json({
@@ -67,7 +81,7 @@ router.get('/:id', async (req, res) => {
         })
     } catch (err) {
         return res.status(500).json({
-            message: 'interal server error!',
+            message: 'interal server error',
             error: err.message
         })
     }
@@ -83,7 +97,7 @@ router.get('/:id', async (req, res) => {
 * @apiParam {number} year : book's year
 * @apiParam {id} authorId : book's author id
 */
-router.post('/', create, async (req, res) => {
+router.post('/', createBook, async (req, res) => {
     try {
         // if validation failed
         let errors = validationResult(req)
@@ -97,16 +111,19 @@ router.post('/', create, async (req, res) => {
         // if validation has been successful
         let book = new Book
         book.title = req.body.title
+        book.slug = toSlug(req.body.title)
         book.year = req.body.year
-        book.authorId = req.body.authorId
+        book.author = req.body.author
         await book.save()
+        // add book to author
+        await addBookToAuthor(book, req.body.author)
         return res.status(200).json({
             status: true,
-            data: await Book.findById(book._id)
+            data: await Book.findById(book._id).populate({ path: 'author', select: '-books' })
         })
     } catch (err) {
         return res.status(500).json({
-            message: 'interal server error!',
+            message: 'interal server error',
             error: err.message
         })
     }
@@ -121,9 +138,9 @@ router.post('/', create, async (req, res) => {
 * @apiParam {id} id : book unique id
 * @apiParam {string} title : book's title
 * @apiParam {number} year : book's year
-* @apiParam {id} authorId : book's author id
+* @apiParam {id} author : book's author id
 */
-router.patch('/:id', edit, async (req, res) => {
+router.patch('/:id', editBook, async (req, res) => {
     try {
         // if validation failed
         let errors = validationResult(req)
@@ -141,20 +158,28 @@ router.patch('/:id', edit, async (req, res) => {
         if (!book) {
             return res.status(200).json({
                 status: false,
-                message: 'book not found!'
+                message: 'book not found'
             })
         }
         book.title = req.body.title
+        book.slug = toSlug(req.body.title)
         book.year = req.body.year
-        book.authorId = req.body.authorId
+        // if author changed
+        if (book.author != req.body.author) {
+            // remove book from author before (if exists)
+            await removeBookFromAuthor(book, book.author)
+            // add book to new author
+            await addBookToAuthor(book, req.body.author)
+            book.author = req.body.author
+        }
         await book.save()
         return res.status(200).json({
             status: true,
-            data: book
+            data: await Book.findById(id).populate({ path: 'author', select: '-books' })
         })
     } catch (err) {
         return res.status(500).json({
-            message: 'interal server error!',
+            message: 'interal server error',
             error: err.message
         })
     }
@@ -168,28 +193,58 @@ router.patch('/:id', edit, async (req, res) => {
 *
 * @apiParam {number} id : book unique id
 */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', deleteBook, async (req, res) => {
     try {
+        // if validation failed
+        let errors = validationResult(req)
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                status: false,
+                message: 'inputs not valid',
+                errors: errors.array({ onlyFirstError: true })
+            })
+        }
         let { id } = req.params
-        let book = await Book.findByIdAndRemove(id)
+        let book = await Book.findById(id).populate({ path: 'author', select: '-books' })
         // if book not found
         if (!book) {
             return res.status(200).json({
                 status: false,
-                message: 'book not found!',
+                message: 'book not found',
             })
         }
+        await book.remove()
+        // remove book from author
+        await removeBookFromAuthor(book, book.author)
         return res.status(200).json({
             status: true,
-            message: 'success delete book!',
+            message: 'success delete book',
             data: book
         })
     } catch (err) {
         return res.status(500).json({
-            message: 'interal server error!',
+            message: 'interal server error',
             error: err.message
         })
     }
 })
+
+// add book to author function
+let addBookToAuthor = async (book, authorId) => {
+    let author = await User.findById(authorId)
+    if (author) {
+        author.books.push(book._id)
+        await author.save()
+    }
+}
+
+// remove book from author function
+let removeBookFromAuthor = async (book, authorId) => {
+    let author = await User.findById(authorId)
+    if (author) {
+        author.books = author.books.filter(bookId => !book._id.equals(bookId))
+        await author.save()
+    }
+}
 
 module.exports = router

@@ -2,9 +2,9 @@ const express = require('express')
 const router = express.Router()
 const bcrypt = require('bcrypt')
 const { validationResult } = require('express-validator')
-const { create, edit, editPassword } = require('../../../validators/userValidator')
 
-const User = require('../../../models/User')
+const { User, Book } = require('../../../models')
+const { createUser, getUser, editUser, editUserPassword, deleteUser } = require('../../../validators/userValidator')
 
 /*
 * @api {get} /api/v1/user
@@ -24,13 +24,18 @@ router.get('/', async (req, res) => {
         let users = await User.paginate({
             $or: [
                 { name: new RegExp(query, 'i') },
-                { username: new RegExp(query, 'i') },]
+                { username: new RegExp(query, 'i') },
+                { email: new RegExp(query, 'i') },]
         }, {
             pagination: page == 'all' ? false : true,
             // hide the password
             select: '-password',
             page: page ? parseInt(page, 10) : 1,
             limit: limit ? parseInt(limit, 10) : 10,
+            populate: {
+                path: 'books',
+                select: '-author'
+            },
             sort: {
                 name: parseInt(sort)
             }
@@ -41,7 +46,7 @@ router.get('/', async (req, res) => {
         })
     } catch (err) {
         return res.status(500).json({
-            message: 'interal server error!',
+            message: 'interal server error',
             error: err.message
         })
     }
@@ -55,15 +60,24 @@ router.get('/', async (req, res) => {
 *
 * @apiParam {id} id : user unique id
 */
-router.get('/:id', async (req, res) => {
+router.get('/:id', getUser, async (req, res) => {
     try {
+        // if validation failed
+        let errors = validationResult(req)
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                status: false,
+                message: 'inputs not valid',
+                errors: errors.array({ onlyFirstError: true })
+            })
+        }
         let { id } = req.params
         let user = await User.findById(id).select('-password')
         // if user not found
         if (!user) {
             return res.status(200).json({
                 status: false,
-                message: 'user not found!',
+                message: 'user not found',
             })
         }
         return res.status(200).json({
@@ -72,7 +86,7 @@ router.get('/:id', async (req, res) => {
         })
     } catch (err) {
         return res.status(500).json({
-            message: 'interal server error!',
+            message: 'interal server error',
             error: err.message
         })
     }
@@ -89,7 +103,7 @@ router.get('/:id', async (req, res) => {
 * @apiParam {string} password : user's password
 * @apiParam {string} confirmPassword : confirm password
 */
-router.post('/', create, async (req, res) => {
+router.post('/', createUser, async (req, res) => {
     try {
         // if validation failed
         let errors = validationResult(req)
@@ -104,15 +118,17 @@ router.post('/', create, async (req, res) => {
         let user = new User
         user.name = req.body.name
         user.username = req.body.username
+        user.email = req.body.email
         user.password = await bcrypt.hash(req.body.password, 10)
         await user.save()
         return res.status(200).json({
             status: true,
+            message: 'success add user',
             data: await User.findById(user._id).select('-password')
         })
     } catch (err) {
         return res.status(500).json({
-            message: 'interal server error!',
+            message: 'interal server error',
             error: err.message
         })
     }
@@ -128,7 +144,7 @@ router.post('/', create, async (req, res) => {
 * @apiParam {string} name : user's name
 * @apiParam {string} username : user's username
 */
-router.patch('/:id', edit, async (req, res) => {
+router.patch('/:id', editUser, async (req, res) => {
     try {
         // if validation failed
         let errors = validationResult(req)
@@ -146,19 +162,21 @@ router.patch('/:id', edit, async (req, res) => {
         if (!user) {
             return res.status(200).json({
                 status: false,
-                message: 'user not found!'
+                message: 'user not found'
             })
         }
         user.name = req.body.name
         user.username = req.body.username
+        user.email = req.body.email
         await user.save()
         return res.status(200).json({
             status: true,
+            message: 'success update user',
             data: user
         })
     } catch (err) {
         return res.status(500).json({
-            message: 'interal server error!',
+            message: 'interal server error',
             error: err.message
         })
     }
@@ -175,7 +193,7 @@ router.patch('/:id', edit, async (req, res) => {
 * @apiParam {string} password : user's password
 * @apiParam {string} confirmPassword : confirm password
 */
-router.patch('/:id/password', editPassword, async (req, res) => {
+router.patch('/:id/password', editUserPassword, async (req, res) => {
     try {
         // if validation failed
         let errors = validationResult(req)
@@ -188,23 +206,31 @@ router.patch('/:id/password', editPassword, async (req, res) => {
         }
         // if validation has been successful
         let { id } = req.params
-        let user = await User.findById(id).select('-password')
+        let user = await User.findById(id)
         // if user not found
         if (!user) {
-            return res.status(200).json({
+            return res.status(400).json({
                 status: false,
-                message: 'user not found!'
+                message: 'user not found'
             })
         }
-        user.password = req.body.password
+        // if old password is incorrect
+        if (!bcrypt.compareSync(req.body.oldPassword, user.password)) {
+            return res.status(400).json({
+                status: false,
+                message: 'old password is incorrect'
+            })
+        }
+        user.password = await bcrypt.hash(req.body.password, 10)
         await user.save()
         return res.status(200).json({
             status: true,
-            data: user
+            message: 'success update user\'s password',
+            data: await User.findById(id).select('-password')
         })
     } catch (err) {
         return res.status(500).json({
-            message: 'interal server error!',
+            message: 'interal server error',
             error: err.message
         })
     }
@@ -218,25 +244,43 @@ router.patch('/:id/password', editPassword, async (req, res) => {
 *
 * @apiParam {number} id : user unique id
 */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', deleteUser, async (req, res) => {
     try {
+        // if validation failed
+        let errors = validationResult(req)
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                status: false,
+                message: 'inputs not valid',
+                errors: errors.array({ onlyFirstError: true })
+            })
+        }
         let { id } = req.params
-        let user = await User.findByIdAndRemove(id).select('-password')
+        let user = await User.findById(id).select('-password')
         // if user not found
         if (!user) {
             return res.status(200).json({
                 status: false,
-                message: 'user not found!',
+                message: 'user not found',
             })
         }
+        await user.remove()
+        // set book's author to null
+        user.books.forEach(async bookId => {
+            let book = await Book.findById(bookId)
+            if (book) {
+                book.author = null
+                await book.save()
+            }
+        })
         return res.status(200).json({
             status: true,
-            message: 'success delete user!',
+            message: 'success delete user',
             data: user
         })
     } catch (err) {
         return res.status(500).json({
-            message: 'interal server error!',
+            message: 'interal server error',
             error: err.message
         })
     }

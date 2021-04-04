@@ -1,16 +1,35 @@
-const { body } = require("express-validator");
+const { body, param } = require('express-validator');
+const { ObjectId } = require('mongoose').Types
+const { toSlug } = require('../utils/string')
+const { Book, User } = require('../models')
 
 const validators = {
+    id: param('id')
+        .exists().withMessage('id is required')
+        .custom(id => ObjectId.isValid(id)).withMessage('id is not valid'),
     title: body('title')
-        .notEmpty().withMessage('title is required'),
+        .exists().withMessage('title is required')
+        .custom(async (title, { req }) => {
+            let book = req.method == 'POST' ? await Book.findOne({ slug: toSlug(title) }) : await Book.findOne({ slug: toSlug(title), _id: { $ne: req.params.id } })
+            if (book !== null) return Promise.reject();
+        }).withMessage('book already exist'),
     year: body('year')
-        .notEmpty().withMessage('year is required')
+        .exists().withMessage('year is required')
         .isInt({ gte: 1970 }).withMessage('year must be an integer and greater than 1970'),
-    authorId: body('authorId')
-        .notEmpty().withMessage('author id is required')
+    author: body('author')
+        .exists().withMessage('author id is required')
+        .custom(authorId => ObjectId.isValid(authorId)).withMessage('author id is not valid')
+        .custom(async authorId => {
+            let user = await User.findById(authorId)
+            if (user === null) return Promise.reject();
+        }).withMessage('author not found')
 }
 
-module.exports = {
-    create: [validators.title, validators.year, validators.authorId],
-    edit: [validators.title, validators.year, validators.authorId],
+const userValidator = {
+    getBook: [validators.id],
+    createBook: [validators.title, validators.year, validators.author],
+    editBook: [validators.id, validators.title, validators.year, validators.author],
+    deleteBook: [validators.id],
 }
+
+module.exports = userValidator

@@ -6,7 +6,7 @@ const bookSchema = new Schema({
     title: { type: String, required: true },
     slug: { type: String, required: true, unique: true },
     year: { type: Number, required: true },
-    author: { type: Schema.Types.ObjectId, required: true },
+    author: { type: Schema.Types.ObjectId, ref: 'users' },
 }, { timestamps: true, versionKey: false })
 
 bookSchema.plugin(mongoosePaginate)
